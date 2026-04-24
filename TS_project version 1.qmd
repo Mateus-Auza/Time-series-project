@@ -1,0 +1,479 @@
+---
+title: "Time Series Analysis – Visitors to Australia"
+author: "Mateus Auza Cruz"
+date: today
+format:
+  pdf:
+    echo: false
+    pdf-engine: xelatex
+    documentclass: scrartcl
+    papersize: letter
+    colorlinks: true
+    fig-cap-location: bottom
+    fig-pos: H
+    geometry:
+      - margin=1in
+    fontsize: 11pt
+execute:
+  cache: false 
+  warning: false
+project:
+  execute-dir: project
+editor: 
+  markdown: 
+    wrap: 80
+df_print: kable
+---
+<style>
+.small-text {
+  font-size: 0.7em;
+}
+</style>
+
+
+
+# Introduction
+
+Time series analysis provides a powerful framework for modeling and forecasting data that evolve over time, particularly when observations exhibit temporal dependence, trend, and seasonality. In this report, we analyze the monthly number of international visitors to Australia over the period 1985–2005.
+
+The objective of this study is to develop an appropriate model for capturing the main structural components of the series—namely trend, seasonality, and autocorrelation—and to produce accurate forecasts. 
+
+To address these challenges, a Seasonal Autoregressive Integrated Moving Average (SARIMA) framework is adopted. Several model specifications are estimated and compared using information criteria, residual diagnostics, and out-of-sample predictive performance. The final goal is to select a parsimonious and statistically adequate model that provides reliable forecasts while preserving interpretability.
+
+
+```{r}
+#| message: false
+#| warning: false
+# Load libraries
+library(forecast)
+library(tseries)
+library(ggplot2)
+library(kableExtra)
+library(dplyr)
+library(tidyr)
+library(knitr)
+
+visit <- read.table("15_visitors.txt")
+
+visit <- ts(
+  data = visit,
+  start = c(1985, 5),
+  end = 2005,
+  frequency = 12
+)
+```
+
+# Exploratory Data Analysis
+
+To better understand the structure of the data, we begin by visualizing the time series and examining its evolution over time.
+
+```{r}
+#| fig-width: 6
+#| fig-height: 4
+#| layout-ncol: 2
+
+plot(
+  visit,
+  main = "Monthly International Visitor Arrivals (1985–2005)”",
+  ylab = "Visitors",
+  xlab = "Time"
+)
+
+plot(visit[1:12], type="l", ylim=range(visit),
+     ylab="Visitors", xlab="Month",
+     col="black", lwd=2, main= "Seasonal Pattern of Monthly Visitors by Year (1985–2005)")
+
+for(i in 2:21){
+  lines(visit[12*(i-1)+(1:12)], col=gray(i/21))
+}
+
+legend("topleft",
+       legend = c("1985–2005"),
+       lty = 1,
+       col = "black",
+       cex = 0.8)
+```
+
+The plot reveals several key features. First, there is a clear upward trend, indicating a steady increase in the number of international visitors. Second, the series exhibits a strong seasonal pattern, with recurring peaks and troughs each year. In addition, the variability appears to increase with the level of the series, suggesting non-constant variance.
+
+A closer inspection of the yearly pattern shows that peaks consistently occur around July and December, while troughs are typically observed between May and June. This regularity confirms the presence of a yearly seasonal cycle with period $S=12$. Altogether, these characteristics indicate that the series is non-stationary.
+
+
+# Preliminary Transformations
+
+The transformations aim to address the non-stationarity identified in the exploratory analysis, namely the presence of trend, seasonality, and non-constant variance.
+
+## Variance stabilization 
+
+A logarithmic transformation is applied to stabilize the variance.
+
+```{r}
+#| fig-width: 6
+#| fig-height: 4
+#| layout-ncol: 2
+log.visit <- log(visit)
+
+plot(log.visit, main = "Log-Transformed Monthly International Visitors", ylab= "Log(Visitors)")
+
+acf(log.visit, main="ACF of Log-Transformed Visitor Series")
+```
+
+While this reduces the dependence of variability on the level of the series, the autocorrelation function still exhibits strong persistence, indicating that the series remains non-stationary.
+
+## Trend and seasonality removal
+
+To achieve stationarity, differencing is applied in two steps. A first-order difference is used to remove the trend component, followed by a seasonal difference with lag 12 to eliminate the seasonal pattern.
+
+```{r}
+#| fig-width: 5
+#| fig-height: 3
+#| out-height: "30%"
+# First difference (remove trend)
+diff1 <- diff(log.visit, differences = 1)
+
+# Seasonal difference
+diff.season <- diff(diff1, lag = 12)
+
+plot(diff.season, main = "Differenced Log-Transformed Visitor Series", ylab="Differenced Log(Visitors)")
+```
+
+The transformed series appears stationary, which is supported by the reduced autocorrelation structure.
+
+This leads naturally to considering a model of the form:
+$$
+SARIMA(p,1,q)(P,1,Q)_{12}
+$$
+
+```{r}
+#| output: false
+#| out-height: "40%"
+adf.test(diff.season)
+
+# This is a test to test stationarity -> We did not see in the course and because I am page limited I will not include in teh report but I will include in the R code
+```
+
+
+# Log-returns and volatility analysis
+
+To assess the potential presence of volatility clustering, we examine the squared log-returns of the series.
+
+```{r}
+#| fig-width: 7
+#| fig-height: 5
+#| out-width: "80%"
+log_returns <- diff(log.visit)
+tsdisplay(log_returns^2,
+          main = "Residual diagnostics: Squared Log-Returns",
+          ylab = "Squared Log-Returns",
+          xlab = "Time")
+```
+
+Neither the plot nor the autocorrelation function of squared returns shows evidence of persistent dependence. Although a few autocorrelation coefficients exceed the significance bounds, they are isolated and do not indicate systematic clustering.
+
+This suggests that the variance is relatively stable over time and does not exhibit the dynamics typically captured by ARCH or GARCH models.
+
+**Therefore, a standard SARIMA framework is appropriate for modeling this series.**
+
+```{r}
+#| out-height: "60%"
+#| output: false
+
+# ARCH effects test
+library(FinTS)
+ArchTest(log_returns)
+# Again it is always better to test if there are any ARCH effects, but because I am limited in space and we did not see this test, I will include it in the report
+
+```
+
+
+# Model choice
+
+To determine appropriate values for $p,q,P,Q$, we analyze the autocorrelation (ACF) and partial autocorrelation (PACF) functions of the transformed series.
+
+```{r}
+#| fig-width: 6
+#| fig-height: 4
+#| layout-ncol: 2
+
+# Seasonal component
+acf(diff.season, main = "ACF (up to 48 lags)",xlab= "Lag (months)", lag=48)
+pacf(diff.season, main = "PACF (up to 48 lags)", xlab="Lag (months)", lag=48)
+
+# Montly component
+acf(diff.season, main = "ACF (first 12 lags)", xlab="Lag (months)", lag=12)
+pacf(diff.season, main = "PACF (first 12 lags)",xlab= "Lag (months)", lag=12)
+```
+
+The behavior of the ACF and PACF at seasonal lags (multiples of 12) suggests the presence of a seasonal autoregressive component, with P likely equal to 1 or 2. The gradual decay in the ACF also indicates a possible seasonal moving average component, with Q equal to 0 or 1.
+
+At non-seasonal lags, the ACF shows a noticeable spike at lag 1, suggesting a moving average component with q=1. The PACF does not exhibit a sharp cutoff, indicating that the autoregressive order p is likely 0 or 1.
+
+
+## Model estimation and comparison
+
+Based on these observations, several SARIMA specifications are estimated with $d=1$ and $D=1$, using maximum likelihood estimation.
+
+$$
+\begin{aligned}
+\textbf{Seasonal component } (2,1,1)_{12}: \quad
+& \text{SARIMA}(0,1,0)(2,1,1)_{12} \; (\text{fit1}) \\
+& \text{SARIMA}(0,1,1)(2,1,1)_{12} \; (\text{fit2}) \\
+& \text{SARIMA}(1,1,0)(2,1,1)_{12} \; (\text{fit3}) \\
+& \text{SARIMA}(1,1,1)(2,1,1)_{12} \; (\text{fit4}) \\[6pt]
+\textbf{Seasonal component } (1,1,1)_{12}: \quad
+& \text{SARIMA}(0,1,0)(1,1,1)_{12} \; (\text{fit5}) \\
+& \text{SARIMA}(0,1,1)(1,1,1)_{12} \; (\text{fit6}) \\
+& \text{SARIMA}(1,1,0)(1,1,1)_{12} \; (\text{fit7}) \\
+& \text{SARIMA}(1,1,1)(1,1,1)_{12} \; (\text{fit8})
+\end{aligned}
+$$
+
+
+
+```{r}
+fit1= arima(log.visit, order=c(0,1,0), seasonal=list(order= c(2,1,1), period=12), method="ML")
+fit2= arima(log.visit, order=c(0,1,1), seasonal=list(order=c(2,1,1), period=12), method="ML")
+fit3= arima(log.visit, order=c(1,1,0), seasonal=list(order= c(2,1,1), period=12), method="ML")
+fit4= arima(log.visit, order=c(1,1,1), seasonal=list(order= c(2,1,1), period=12), method="ML")
+fit5= arima(log.visit, order=c(0,1,0), seasonal=list(order= c(1,1,1), period=12), method="ML")
+fit6= arima(log.visit, order=c(0,1,1), seasonal=list(order= c(1,1,1), period=12), method="ML")
+fit7= arima(log.visit, order=c(1,1,0), seasonal=list(order=c(1,1,1), period=12), method="ML")
+fit8= arima(log.visit, order=c(1,1,1), seasonal=list(order=c(1,1,1), period=12), method="ML")
+```
+
+Model selection is carried out using AIC and BIC criteria. 
+
+```{r}
+#| out-height: "20%"
+df=cbind(
+  AIC(fit1, fit2, fit3, fit4, fit5, fit6, fit7, fit8),
+  BIC(fit1, fit2, fit3, fit4, fit5, fit6, fit7, fit8)
+)
+df[,-3]
+```
+
+Two models emerge as the most competitive:
+
+-   $\text{SARIMA}(0,1,1)(2,1,1)_{12}$ (fit2), with AIC = -661.44 and BIC = -644.38
+-   $\text{SARIMA}(0,1,1)(1,1,1)_{12}$ (fit6), with AIC = -661.57 and BIC = -647.92
+
+These models provide the best trade-off between goodness of fit and parsimony.
+
+# Model validity
+
+To assess model adequacy, we examine whether the residuals behave like white noise.
+
+```{r}
+#| fig-width: 7
+#| fig-height: 6
+#| layout-ncol: 2
+#| fig-pos: "H"
+res6= residuals(fit6)
+res2= residuals(fit2)
+
+tsdisplay(res2,
+          main = "Residual Diagnostics: SARIMA(0,1,1)(2,1,1)[12] (fit2)",
+          ylab = "Residuals",
+          xlab = "Time")
+
+tsdisplay(res6,
+          main = "Residual Diagnostics: SARIMA(0,1,1)(1,1,1)[12] (fit6)",
+          ylab = "Residuals",
+          xlab = "Time")
+#```
+
+qqnorm(res2, main = "QQ Plot: fit2 Residuals")
+qqline(res2, col = "red")
+
+qqnorm(res6, main = "QQ Plot: fit6 Residuals")
+qqline(res6, col = "red")
+
+#```{r}
+##| fig-width: 6
+##| fig-height: 4
+##| layout-ncol: 2
+# #| fig-pos: "H"
+
+# Ljung Box test for h lags with seasonality included 
+LjungBoxPlot <- function(res, p, q, P, Q, lag.max = 20, title){
+  
+  # Total number of parameters (non-seasonal + seasonal)
+  fitdf <- p + q + P + Q
+  
+  pval <- numeric(lag.max)
+  
+  for(k in (fitdf + 1):lag.max){
+    pval[k] <- Box.test(res, lag = k, type = "Ljung-Box", fitdf = fitdf)$p.value
+  }
+
+  plot((fitdf + 1):lag.max, pval[(fitdf + 1):lag.max],
+       type = "b", pch = 19, ylim = c(0,1),
+       xlab = "Lag", ylab = "p-value",
+       main = paste("Ljung–Box test:", title))
+  
+  # 5% significance threshold
+  abline(h = 0.05, col = "blue", lty = 2)
+  
+  # Clean annotation
+  text(x = lag.max - 2, y = 0.07,
+       labels = "5% threshold", col = "blue", cex = 0.8)
+}
+
+# Ljung-Box tests
+LjungBoxPlot(res6, p = 0, q = 1, P = 2, Q = 1,
+             title = "SARIMA(0,1,1)(1,1,1)[12] (fit2)")
+
+LjungBoxPlot(res2, p = 0, q = 1, P = 1, Q = 1,
+             title = "SARIMA(0,1,1)(2,1,1)[12] (fit6)")
+```
+
+
+
+The residual ACF plots (below) show that most autocorrelations lie within the confidence bounds for both models, suggesting no strong remaining dependence. This is confirmed by the Ljung–Box tests up to lag 20, where the p-values remain above the 5% significance level. 
+
+In addition, the QQ-plots of the residuals indicate an approximately normal distribution, with only minor deviations in the tails.
+
+Overall, there is no significant evidence of residual autocorrelation, indicating that both models adequately capture the temporal dependence structure of the series.
+
+# Predictive performance
+
+The predictive performance is evaluated using a rolling one-step-ahead forecasting procedure.
+
+```{r}
+#| out-height: "40%"
+OneAhead <- function(x, order, seasonal = list(order = c(0,0,0), period = 0), K = 0.8){
+  n <- length(x)
+  ntrain <- floor(K*n)
+  
+  tmp <- numeric(n)
+  for(i in ntrain:(n-1)){
+    fit <- arima(x[1:i], order = order, seasonal = seasonal)
+    tmp[i + 1] <- predict(fit, n.ahead = 1)$pred[1]
+  }
+  
+  idx <- (ntrain + 1):n
+  pred <- tmp[idx]
+  errors <- x[idx] - pred
+
+  return(list(pred = pred, errors = errors, mspe = mean(errors^2)))
+}
+
+mod6pred <- OneAhead(log.visit, order= c(0, 1, 1), seasonal = list(order = c(1,1,1), period = 12))
+mod2pred <- OneAhead(log.visit, order= c(0, 1, 1), seasonal = list(order = c(2,1,1), period = 12))
+
+
+data.frame(model= c("fit2", "fit6"), MSPE= c(mod2pred$mspe,mod6pred$mspe)) |> kable()
+
+```
+
+Both models achieve very similar Mean Squared Prediction Errors (MSPE), around 0.0033, indicating comparable forecasting ability.
+
+# Final Model selection
+
+Since both models pass diagnostic checks and exhibit similar predictive performance, we select the more parsimonious specification:
+$$
+\text{SARIMA}(0,1,1)(1,1,1)_{12}
+$$
+The full model can be written as:
+$$
+(1 - \Phi_1 B^{12})(1 - B)(1 - B^{12}) X_t = (1 + \theta_1 B)(1 + \Theta_1 B^{12}) \varepsilon_t
+$$
+
+where $B$ is the backshift operator, $\theta_1$ is the non-seasonal MA parameter, and $\Phi_1$, $\Theta_1$ are the seasonal AR and MA parameters, respectively.
+
+This model achieves a slightly better balance between fit and complexity, with fewer parameters.
+
+# Model interpretation
+
+We now examine the selected model in detail:
+
+```{r}
+#| out-height: "20%"
+#| out-width: "60%"
+fit6= Arima(log.visit, order=c(0,1,1), seasonal=list(order= c(1,1,1), period=12))
+summary(fit6)
+```
+
+The selected model captures both short-term dynamics and annual seasonality in the log-transformed series.
+
+The MA(1) coefficient is statistically significant, indicating a moderate short-term adjustment to shocks. The seasonal MA(1) component is large and significant, highlighting the importance of seasonal effects. The seasonal AR(1) coefficient is relatively small, suggesting a weaker persistence at the seasonal level.
+
+The residual variance is low ($σ^2=0.002862$), and the information criteria confirm a good overall fit.
+
+In terms of forecasting performance, the model achieves low RMSE and MAE values. The MAPE (around 0.70%) indicates high predictive accuracy, while the MASE ($< 1$) confirms improvement over a naive benchmark. The near-zero residual autocorrelation further supports the adequacy of the model.
+
+
+# Forecasting
+
+We generate forecasts for the next 20 periods using the selected SARIMA model.
+
+```{r}
+#| fig-width: 6
+#| fig-height: 4
+#| out-height: "30%"
+par(
+  cex.main = 0.8,   # title smaller
+  cex.lab  = 0.8,   # axis labels
+  cex.axis = 0.7    # tick labels
+)
+
+pred.ts <- predict(fit6, n.ahead = 20)
+
+#Mean forecast (bias-corrected)
+forecast_mean <- exp(pred.ts$pred + 0.5 * pred.ts$se^2)
+
+#Confidence intervals (on original scale, correctly transformed)
+upper <- exp(pred.ts$pred + 1.96 * pred.ts$se)
+lower <- exp(pred.ts$pred - 1.96 * pred.ts$se)
+
+# Time series objects
+forecast_ts <- ts(forecast_mean, start = end(visit) + c(0,1), frequency = 12)
+upper_ts <- ts(upper, start = end(visit) + c(0,1), frequency = 12)
+lower_ts <- ts(lower, start = end(visit) + c(0,1), frequency = 12)
+
+# Plot
+plot(visit, type = "l", col = "black", main = "Forecast monthly international visitor arrivals", ylab="Visitors")
+lines(forecast_ts, col = "blue")
+lines(upper_ts, col = "red", lty = 2)
+lines(lower_ts, col = "red", lty = 2)
+
+
+#fc <- forecast(fit6, h = 20)
+
+# Plot
+#plot(fc, main = "Forecast of visitor series")
+
+# Add original series for clarity
+#lines(visit, col = "black")
+
+```
+
+Since the model is estimated on the logarithmic scale, forecasts are first obtained for the conditional mean and standard error on the log scale.
+
+Under the assumption that the residuals are approximately normally distributed, prediction intervals are constructed as $\hat{y}_{t+h}±1.96se_{t+h}$ on the log scale.
+
+These bounds are then transformed back to the original scale using the exponential function. A bias correction is applied to the mean forecast via $exp(\hat{y}_{t+h}±0.5se_{t+h}^2)$, while the interval bounds are obtained by exponentiating the lower and upper limits.
+
+The forecasts exhibit a continuation of the historical seasonal pattern, with recurring peaks and troughs reflecting annual effects. Prediction intervals widen as the forecast horizon increases, illustrating the growing uncertainty associated with longer-term forecasts.
+
+# Conclusion
+
+This study analyzed the monthly number of international visitors using a comprehensive time series framework. The exploratory analysis revealed a clear upward trend, strong annual seasonality, and increasing variability, indicating a non-stationary process. These features were successfully addressed through a logarithmic transformation combined with both regular and seasonal differencing.
+
+Based on the analysis of the autocorrelation and partial autocorrelation functions, several SARIMA models were considered. Model selection using AIC and BIC criteria identified two competitive specifications, both of which adequately captured the temporal structure of the data. Diagnostic checks, including residual analysis and Ljung–Box tests, confirmed that the residuals behave like white noise, indicating a good model fit.
+
+Between the competing models, the more parsimonious specification, $\text{SARIMA}(0,1,1)(1,1,1)_{12}$, was selected. This model provides a good balance between simplicity and performance, while maintaining strong predictive accuracy. The estimated parameters highlight the importance of seasonal effects, particularly through the significant seasonal moving average component.
+
+Forecasting results show a continuation of the historical dynamics, with pronounced seasonal patterns and increasing uncertainty over time, as reflected in widening prediction intervals. 
+
+Overall, the model demonstrates strong predictive performance and provides a reliable tool for short- to medium-term forecasting of international visitor arrivals.
+
+# Appendix
+
+I used ChatGPT for limited assistance in the preparation of this report. In particular, it was used:
+
+-   as a language assistant to improve clarity, grammar, and formatting of the text;
+-   to help format and debug R/Quarto code used for generating figures.
+
+All statistical analyses, model choices, interpretations, and final conclusions are my own. I am able to explain and justify all aspects of the work.
+
