@@ -83,7 +83,7 @@ This specification provided the best balance between model fit, forecasting perf
 │   ├── Stationary_time_series.png
 │   └── Time_series_plot.png
 ├── report/
-│   └── time_series_analysis.qmd
+│   └── time_series_report.pdf
 └── README.md
 ```
 
@@ -121,7 +121,7 @@ quarto render analysis/time_series_analysis.qmd
 
 The complete report is available in:
 
-- [time_series_analysis_report.pdf](analysis/time_series_analysis_report.pdf)
+- [time_series_analysis_report.pdf](report/time_series_report.pdf)
 
 ## Author
 
