@@ -121,7 +121,7 @@ quarto render analysis/time_series_analysis.qmd
 
 The complete report is available in:
 
-- [time_series_analysis_report.pdf](report/time_series_analysis_report.pdf)
+- [time_series_analysis_report.pdf](analysis/time_series_analysis_report.pdf)
 
 ## Author
 
