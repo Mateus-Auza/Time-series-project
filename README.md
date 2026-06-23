@@ -11,7 +11,7 @@ The objective is to identify the underlying trend and seasonal patterns in the d
 The dataset is provided in:
 
 ```text
-data/15.txt
+data/australia_visitors_1985_2005.txt
 ```
 
 It contains monthly observations of international visitor arrivals to Australia between 1985 and 2005.
