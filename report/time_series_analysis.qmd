@@ -53,7 +53,7 @@ library(dplyr)
 library(tidyr)
 library(knitr)
 
-visit <- read.table("15_visitors.txt")
+visit <- read.table("../data/australia_visitors_1985_2005.txt")
 
 visit <- ts(
   data = visit,
