@@ -6,6 +6,10 @@ This project analyzes monthly international visitor arrivals to Australia from 1
 
 The objective is to identify the underlying trend and seasonal patterns in the data and develop a forecasting model capable of producing accurate future predictions.
 
+## Forecast
+
+![Forecast](figures/Forecast_SARIMA_model.png)
+
 ## Dataset
 
 The dataset is provided in:
@@ -71,11 +75,15 @@ This specification provided the best balance between model fit, forecasting perf
 .
 ├── data/
 │   └── 15.txt
-├── scripts/
-│   └── analysis.R
+├── analysis/
+│   └── time_series_analysis.qmd
 ├── figures/
+│   ├── ACF_PACF_plots.png
+│   ├── Forecast_SARIMA_model.png
+│   ├── Stationary_time_series.png
+│   └── Time_series_plot.png
 ├── report/
-│   └── report.pdf
+│   └── time_series_analysis.qmd
 └── README.md
 ```
 
@@ -103,8 +111,10 @@ install.packages(c(
 
 ## Running the Analysis
 
-```r
-source("scripts/analysis.R")
+Render the Quarto document:
+
+```bash
+quarto render analysis/time_series_analysis.qmd
 ```
 
 ## Author
