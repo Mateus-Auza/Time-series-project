@@ -1,4 +1,4 @@
-# Time Series Analysis of International Visitors to Australia (1985–2005)
+# Forecasting International Visitors to Australia Using SARIMA Models (1985–2005)
 
 ## Overview
 
@@ -116,6 +116,12 @@ Render the Quarto document:
 ```bash
 quarto render analysis/time_series_analysis.qmd
 ```
+
+## Full Report
+
+The complete report is available in:
+
+- [time_series_analysis_report.pdf](report/time_series_analysis_report.pdf)
 
 ## Author
 
